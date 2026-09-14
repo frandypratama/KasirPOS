@@ -2,7 +2,7 @@
 'use client';
 
 import { useAuth } from '@/components/auth/Auth-provider';
-import { ProductForm } from '@/components/products/Product-form';
+import { ProductForm } from '@/components/products/ProductForm';
 import { getProductById, updateProduct } from '@/services/product.service';
 import { Product, ProductInput } from '@/types/product';
 import { useParams, useRouter } from 'next/navigation';

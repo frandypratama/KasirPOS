@@ -1,6 +1,6 @@
 'use client';
 import { useAuth } from '@/components/auth/Auth-provider';
-import { ProductForm } from '@/components/products/Product-form';
+import { ProductForm } from '@/components/products/ProductForm';
 import { addProduct } from '@/services/product.service';
 import { ProductInput } from '@/types/product';
 import { useRouter } from 'next/navigation';
