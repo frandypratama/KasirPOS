@@ -1,577 +1,451 @@
-"use client";
+﻿'use client';
 
-import { useEffect, useMemo, useState } from "react";
-import { Eye, Search, Trash2, X } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useAuth } from '@/components/auth/Auth-provider';
+import PrintButton from '@/components/transactions/print-button';
+import { getTransactions } from '@/services/transaction.service';
+import { Transaction } from '@/types/transaction';
+import { formatCurrency } from '@/utils/currency';
+import { formatDate } from '@/utils/date';
+import {
+  ArrowRight,
+  ReceiptText,
+  ShoppingBag,
+} from 'lucide-react';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
 
-type CartItem = {
-  productId: string;
-  name: string;
-  price: number;
-  qty: number;
-  subtotal: number;
-};
+// =========================================
+// PAYMENT BADGE
+// =========================================
 
-type PaymentMethod = "cash" | "transfer" | "qris";
-
-type Transaction = {
-  id: string;
-  date: string;
-  items: CartItem[];
-  subtotal: number;
-  discount: number;
-  total: number;
-  paymentMethod: PaymentMethod;
-};
-
-export default function TransactionPage() {
-  const router = useRouter();
-
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // ==============================
-  // SEARCH
-  // ==============================
-  const [search, setSearch] = useState("");
-
-  // ==============================
-  // FORMAT RUPIAH
-  // ==============================
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("id-ID", {
-      style: "currency",
-      currency: "IDR",
-      maximumFractionDigits: 0,
-    }).format(Number(value) || 0);
-  };
-
-  // ==============================
-  // FORMAT TANGGAL
-  // ==============================
-  const formatDate = (date: string) => {
-    const parsedDate = new Date(date);
-
-    if (Number.isNaN(parsedDate.getTime())) {
-      return "Tanggal tidak valid";
-    }
-
-    return new Intl.DateTimeFormat("id-ID", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(parsedDate);
-  };
-
-  // ==============================
-  // LOAD TRANSACTIONS
-  // ==============================
-  useEffect(() => {
-    const saved = localStorage.getItem("transactions");
-
-    if (!saved) {
-      setTransactions([]);
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const parsed = JSON.parse(saved);
-
-      if (Array.isArray(parsed)) {
-        const validTransactions = parsed.filter(
-          (transaction): transaction is Transaction =>
-            transaction &&
-            typeof transaction === "object" &&
-            transaction.id &&
-            transaction.date &&
-            Array.isArray(transaction.items)
-        );
-
-        setTransactions([...validTransactions].reverse());
-      } else {
-        setTransactions([]);
-      }
-    } catch (error) {
-      console.error("Gagal membaca transaksi:", error);
-      setTransactions([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // ==============================
-  // FILTER / SEARCH TRANSACTIONS
-  // ==============================
-  const filteredTransactions = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-
-    // Jika search kosong, tampilkan semua
-    if (!keyword) {
-      return transactions;
-    }
-
-    return transactions.filter((transaction) => {
-      // Invoice
-      const invoice = String(transaction.id || "").toLowerCase();
-
-      // Tanggal
-      const date = formatDate(transaction.date).toLowerCase();
-
-      // Metode pembayaran
-      const paymentMethod = String(
-        transaction.paymentMethod || ""
-      ).toLowerCase();
-
-      // Total dalam format rupiah
-      const formattedTotal = formatCurrency(
-        transaction.total
-      ).toLowerCase();
-
-      // Total angka biasa
-      const numericTotal = String(
-        transaction.total || ""
-      ).toLowerCase();
-
-      return (
-        invoice.includes(keyword) ||
-        date.includes(keyword) ||
-        paymentMethod.includes(keyword) ||
-        formattedTotal.includes(keyword) ||
-        numericTotal.includes(keyword)
-      );
-    });
-  }, [transactions, search]);
-
-  // ==============================
-  // DELETE TRANSACTION
-  // ==============================
-  const handleDelete = (id: string) => {
-    const confirmed = window.confirm(
-      "Yakin ingin menghapus transaksi ini?"
-    );
-
-    if (!confirmed) return;
-
-    const updated = transactions.filter(
-      (transaction) => transaction.id !== id
-    );
-
-    localStorage.setItem(
-      "transactions",
-      JSON.stringify([...updated].reverse())
-    );
-
-    setTransactions(updated);
-  };
-
-  // ==============================
-  // DELETE ALL
-  // ==============================
-  const handleClearAll = () => {
-    const confirmed = window.confirm(
-      "Yakin ingin menghapus semua riwayat transaksi?"
-    );
-
-    if (!confirmed) return;
-
-    localStorage.removeItem("transactions");
-    localStorage.removeItem("lastTransaction");
-
-    setTransactions([]);
-    setSearch("");
-  };
-
-  // ==============================
-  // CLEAR SEARCH
-  // ==============================
-  const handleClearSearch = () => {
-    setSearch("");
-  };
-
-  // ==============================
-  // LOADING
-  // ==============================
-  if (loading) {
-    return (
-      <div className="space-y-2">
-        <h1 className="text-xl font-bold">
-          Riwayat Transaksi
-        </h1>
-
-        <p className="text-sm text-muted-foreground">
-          Memuat transaksi...
-        </p>
-      </div>
-    );
+const PAYMENT_BADGE: Record<
+  string,
+  {
+    label: string;
+    className: string;
   }
+> = {
+  cash: {
+    label: 'Tunai',
+    className:
+      'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
+  },
 
-  // ==============================
-  // PAGE
-  // ==============================
+  transfer: {
+    label: 'Transfer',
+    className:
+      'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
+  },
+
+  qris: {
+    label: 'QRIS',
+    className:
+      'bg-violet-50 text-violet-700 ring-1 ring-violet-200',
+  },
+};
+
+// =========================================
+// SKELETON ROW
+// =========================================
+
+function SkeletonRow() {
   return (
-    <div className="space-y-4">
+    <tr className='animate-pulse border-b border-slate-100'>
+      {/* Invoice */}
+      <td className='px-6 py-4'>
+        <div className='h-4 w-32 rounded-md bg-slate-200' />
+      </td>
 
-      {/* ==============================
-          HEADER
-      ============================== */}
-      <div className="flex items-start justify-between">
+      {/* Tanggal */}
+      <td className='px-6 py-4'>
+        <div className='h-4 w-40 rounded-md bg-slate-200' />
+      </td>
 
-        <div>
-          <h1 className="text-xl font-bold">
-            Riwayat Transaksi
-          </h1>
+      {/* Total */}
+      <td className='px-6 py-4'>
+        <div className='h-4 w-24 rounded-md bg-slate-200' />
+      </td>
 
-          <p className="text-xs text-muted-foreground">
-            Daftar transaksi yang sudah dibayar.
-          </p>
+      {/* Pembayaran */}
+      <td className='px-6 py-4'>
+        <div className='h-6 w-20 rounded-full bg-slate-200' />
+      </td>
 
-          <p className="mt-1 text-xs font-medium">
-            Total transaksi: {transactions.length}
-          </p>
-        </div>
+      {/* Aksi */}
+      <td className='px-6 py-4'>
+        <div className='ml-auto h-8 w-32 rounded-lg bg-slate-200' />
+      </td>
+    </tr>
+  );
+}
 
-        {transactions.length > 0 && (
-          <button
-            type="button"
-            onClick={handleClearAll}
-            className="
-              rounded-lg
-              border border-red-400
-              px-3 py-2
-              text-xs font-bold
-              text-red-500
-              transition
-              hover:bg-red-500
-              hover:text-white
-            "
-          >
-            Hapus Semua
-          </button>
-        )}
+// =========================================
+// EMPTY TRANSACTIONS
+// =========================================
 
-      </div>
-
-      {/* ==============================
-          SEARCH
-      ============================== */}
-      {transactions.length > 0 && (
-        <div className="flex w-full items-center gap-2">
-
-          {/* SEARCH INPUT */}
-          <div className="relative w-full max-w-md">
-
-            <Search
-              size={16}
-              className="
-                absolute
-                left-3
-                top-1/2
-                -translate-y-1/2
-                text-muted-foreground
-              "
+function EmptyTransactions() {
+  return (
+    <tr>
+      <td colSpan={5}>
+        <div className='flex flex-col items-center justify-center py-20 text-center'>
+          {/* Icon */}
+          <div className='mb-4 grid size-16 place-items-center rounded-2xl bg-slate-100'>
+            <ShoppingBag
+              size={28}
+              className='text-slate-400'
             />
-
-            <input
-              type="text"
-              value={search}
-              onChange={(e) =>
-                setSearch(e.target.value)
-              }
-              placeholder="Cari invoice, tanggal, metode..."
-              className="
-                h-9
-                w-full
-                rounded-lg
-                border
-                bg-background
-                pl-9
-                pr-9
-                text-xs
-                outline-none
-                transition
-                focus:border-indigo-500
-                focus:ring-1
-                focus:ring-indigo-500
-              "
-            />
-
-            {/* CLEAR SEARCH */}
-            {search && (
-              <button
-                type="button"
-                onClick={handleClearSearch}
-                className="
-                  absolute
-                  right-2
-                  top-1/2
-                  -translate-y-1/2
-                  rounded
-                  p-1
-                  text-muted-foreground
-                  transition
-                  hover:bg-muted
-                  hover:text-foreground
-                "
-                title="Hapus pencarian"
-              >
-                <X size={14} />
-              </button>
-            )}
-
           </div>
 
-          {/* HASIL PENCARIAN */}
-          {search && (
-            <p className="whitespace-nowrap text-xs text-muted-foreground">
-              {filteredTransactions.length} hasil
-            </p>
-          )}
-
-        </div>
-      )}
-
-      {/* ==============================
-          EMPTY STATE
-      ============================== */}
-      {transactions.length === 0 ? (
-
-        <div className="rounded-lg border p-8 text-center">
-
-          <h2 className="font-semibold">
+          {/* Title */}
+          <h3 className='font-bold text-slate-800'>
             Belum ada transaksi
-          </h2>
+          </h3>
 
-          <p className="mt-1 text-xs text-muted-foreground">
-            Tidak ada data transaksi.
+          {/* Description */}
+          <p className='mt-1 text-sm text-slate-500'>
+            Transaksi yang sudah selesai akan muncul
+            di sini.
           </p>
 
+          {/* Button */}
+          <Link
+            href='/transactions/new'
+            className='mt-5 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700'
+          >
+            Buat Transaksi Baru
+
+            <ArrowRight size={16} />
+          </Link>
         </div>
+      </td>
+    </tr>
+  );
+}
 
-      ) : (
+// =========================================
+// TRANSACTIONS PAGE
+// =========================================
 
-        /* ==============================
-           TABLE
-        ============================== */
-        <div className="w-full overflow-x-auto rounded-lg border">
+function TransactionsPage() {
+  const [transactions, setTransactions] =
+    useState<Transaction[]>([]);
 
-          <table className="w-full border-collapse text-xs">
+  const [loading, setLoading] =
+    useState(true);
 
+  const { user } = useAuth();
+
+  // =========================================
+  // LOAD TRANSACTIONS
+  // =========================================
+
+  useEffect(() => {
+    async function loadData() {
+      // Belum login
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const data =
+          await getTransactions(user.uid);
+
+        setTransactions(data);
+      } catch (error) {
+        console.error(
+          'Gagal mengambil transaksi:',
+          error
+        );
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadData();
+  }, [user]);
+
+  // =========================================
+  // TOTAL OMZET
+  // =========================================
+
+  const totalOmzet =
+    transactions.reduce(
+      (acc, transaction) =>
+        acc + transaction.grandTotal,
+      0
+    );
+
+  // =========================================
+  // RENDER
+  // =========================================
+
+  return (
+    <div>
+      {/* ===================================== */}
+      {/* HEADER */}
+      {/* ===================================== */}
+
+      <div className='mb-7'>
+        <p className='text-sm font-bold text-indigo-600'>
+          Riwayat
+        </p>
+
+        <h1 className='mt-1 text-3xl font-black tracking-tight text-white'>
+          Transaksi
+        </h1>
+
+        <p className='mt-2 text-sm text-slate-500'>
+          Semua riwayat transaksi penjualan MiniPOS
+        </p>
+      </div>
+
+      {/* ===================================== */}
+      {/* STATS SUMMARY */}
+      {/* ===================================== */}
+
+      {!loading &&
+        transactions.length > 0 && (
+          <div className='mb-6 flex flex-wrap gap-4'>
+            {/* TOTAL TRANSAKSI */}
+
+            <div className='flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm'>
+              <div className='grid size-10 place-items-center rounded-xl bg-indigo-50 text-indigo-600'>
+                <ReceiptText size={18} />
+              </div>
+
+              <div>
+                <div className='text-xs font-semibold text-slate-500'>
+                  Total Transaksi
+                </div>
+
+                <div className='text-xl font-black text-slate-900'>
+                  {transactions.length}
+                </div>
+              </div>
+            </div>
+
+            {/* TOTAL OMZET */}
+
+            <div className='flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm'>
+              <div className='grid size-10 place-items-center rounded-xl bg-emerald-50 text-emerald-600'>
+                <ShoppingBag size={18} />
+              </div>
+
+              <div>
+                <div className='text-xs font-semibold text-slate-500'>
+                  Total Omzet
+                </div>
+
+                <div className='text-xl font-black text-slate-900'>
+                  {formatCurrency(totalOmzet)}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+      {/* ===================================== */}
+      {/* TABLE */}
+      {/* ===================================== */}
+
+      <div className='overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm'>
+        <div className='overflow-x-auto'>
+          <table className='w-full text-sm'>
+            {/* ================================= */}
             {/* TABLE HEADER */}
-            <thead>
-              <tr className="border-b bg-muted/40">
+            {/* ================================= */}
 
-                <th className="px-3 py-3 text-center font-bold">
+            <thead>
+              <tr className='border-b border-slate-100 bg-slate-50'>
+                <th className='px-6 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-500'>
                   No. Invoice
                 </th>
 
-                <th className="px-3 py-3 text-center font-bold">
+                <th className='px-6 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-500'>
                   Tanggal
                 </th>
 
-                <th className="px-3 py-3 text-center font-bold">
+                <th className='px-6 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-500'>
                   Total
                 </th>
 
-                <th className="px-3 py-3 text-center font-bold">
-                  Metode Pembayaran
+                <th className='px-6 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-slate-500'>
+                  Pembayaran
                 </th>
 
-                <th className="px-3 py-3 text-center font-bold">
+                <th className='px-6 py-3.5 text-right text-xs font-bold uppercase tracking-wider text-slate-500'>
                   Aksi
                 </th>
-
               </tr>
             </thead>
 
+            {/* ================================= */}
             {/* TABLE BODY */}
+            {/* ================================= */}
+
             <tbody>
+              {/* LOADING */}
 
-              {filteredTransactions.length === 0 ? (
-
-                /* ==============================
-                   SEARCH NOT FOUND
-                ============================== */
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="px-3 py-10 text-center"
-                  >
-
-                    <div className="flex flex-col items-center">
-
-                      <Search
-                        size={28}
-                        className="mb-2 text-muted-foreground"
-                      />
-
-                      <p className="font-semibold">
-                        Transaksi tidak ditemukan
-                      </p>
-
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Tidak ada transaksi yang cocok
-                        dengan &quot;{search}&quot;
-                      </p>
-
-                      <button
-                        type="button"
-                        onClick={handleClearSearch}
-                        className="
-                          mt-3
-                          rounded-lg
-                          border
-                          px-3
-                          py-2
-                          text-xs
-                          font-semibold
-                          transition
-                          hover:bg-muted
-                        "
-                      >
-                        Reset Pencarian
-                      </button>
-
-                    </div>
-
-                  </td>
-                </tr>
-
-              ) : (
-
-                /* ==============================
-                   TRANSACTION LIST
-                ============================== */
-                filteredTransactions.map(
-                  (transaction) => (
-
-                    <tr
-                      key={transaction.id}
-                      className="
-                        border-b
-                        last:border-b-0
-                        transition
-                        hover:bg-muted/30
-                      "
-                    >
-
-                      {/* INVOICE */}
-                      <td
-                        className="
-                          whitespace-nowrap
-                          px-3
-                          py-3
-                          text-center
-                          font-semibold
-                        "
-                      >
-                        {transaction.id}
-                      </td>
-
-                      {/* DATE */}
-                      <td
-                        className="
-                          whitespace-nowrap
-                          px-3
-                          py-3
-                          text-center
-                        "
-                      >
-                        {formatDate(transaction.date)}
-                      </td>
-
-                      {/* TOTAL */}
-                      <td
-                        className="
-                          whitespace-nowrap
-                          px-3
-                          py-3
-                          text-center
-                          font-semibold
-                        "
-                      >
-                        {formatCurrency(
-                          transaction.total
-                        )}
-                      </td>
-
-                      {/* PAYMENT */}
-                      <td className="px-3 py-3 text-center">
-
-                        <span className="font-semibold uppercase">
-                          {transaction.paymentMethod}
-                        </span>
-
-                      </td>
-
-                      {/* ACTION */}
-                      <td className="px-3 py-3">
-
-                        <div className="flex items-center justify-center gap-3">
-
-                          {/* VIEW INVOICE */}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              router.push(
-                                `/transactions/${encodeURIComponent(
-                                  transaction.id
-                                )}`
-                              )
-                            }
-                            className="
-                              flex
-                              cursor-pointer
-                              items-center
-                              gap-1
-                              font-semibold
-                              text-indigo-600
-                              transition
-                              hover:text-indigo-800
-                              hover:underline
-                            "
-                          >
-                            <Eye size={14} />
-                            Lihat Invoice
-                          </button>
-
-                          {/* DELETE */}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleDelete(
-                                transaction.id
-                              )
-                            }
-                            className="
-                              cursor-pointer
-                              text-red-500
-                              transition
-                              hover:text-red-700
-                            "
-                            title="Hapus transaksi"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-
-                        </div>
-
-                      </td>
-
-                    </tr>
-
+              {loading ? (
+                Array.from({ length: 5 }).map(
+                  (_, index) => (
+                    <SkeletonRow
+                      key={index}
+                    />
                   )
                 )
+              ) : /* EMPTY */ transactions.length ===
+                0 ? (
+                <EmptyTransactions />
+              ) : (
+                /* DATA */
+                transactions.map(
+                  (transaction) => {
+                    // Payment badge
+                    const badge =
+                      PAYMENT_BADGE[
+                        transaction.paymentMethod
+                      ] ?? {
+                        label:
+                          transaction.paymentMethod,
 
+                        className:
+                          'bg-slate-100 text-slate-600',
+                      };
+
+                    return (
+                      <tr
+                        key={
+                          transaction.id
+                        }
+                        className='group border-b border-slate-100 transition last:border-0 hover:bg-slate-50'
+                      >
+                        {/* ================================= */}
+                        {/* INVOICE */}
+                        {/* ================================= */}
+
+                        <td className='px-6 py-4'>
+                          <span className='font-mono text-xs font-bold text-indigo-600'>
+                            {
+                              transaction.invoiceNumber
+                            }
+                          </span>
+                        </td>
+
+                        {/* ================================= */}
+                        {/* TANGGAL */}
+                        {/* ================================= */}
+
+                        <td className='px-6 py-4 text-slate-600'>
+                          {transaction.createdAt
+                            ? formatDate(
+                                new Date(
+                                  transaction.createdAt
+                                )
+                              )
+                            : '-'}
+                        </td>
+
+                        {/* ================================= */}
+                        {/* TOTAL */}
+                        {/* ================================= */}
+
+                        <td className='px-6 py-4 font-bold text-slate-900'>
+                          {formatCurrency(
+                            transaction.grandTotal
+                          )}
+                        </td>
+
+                        {/* ================================= */}
+                        {/* PEMBAYARAN */}
+                        {/* ================================= */}
+
+                        <td className='px-6 py-4'>
+                          <span
+                            className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${badge.className}`}
+                          >
+                            {badge.label}
+                          </span>
+                        </td>
+
+                        {/* ================================= */}
+                        {/* AKSI */}
+                        {/* ================================= */}
+
+                        <td className='px-6 py-4 text-right'>
+                          <div className='flex items-center justify-end gap-2'>
+                            {/* DETAIL */}
+
+                            <Link
+                              href={`/transactions/${transaction.id}`}
+                              className='inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-indigo-100 hover:text-indigo-700'
+                            >
+                              Detail
+
+                              <ArrowRight
+                                size={13}
+                              />
+                            </Link>
+
+                            {/* PRINT */}
+
+                            <PrintButton
+                              invoiceNumber={
+                                transaction.invoiceNumber
+                              }
+
+                              date={
+                                transaction.createdAt
+                                  ? formatDate(
+                                      new Date(
+                                        transaction.createdAt
+                                      )
+                                    )
+                                  : '-'
+                              }
+
+                              items={
+                                transaction.items
+                              }
+
+                              total={
+                                transaction.total
+                              }
+
+                              discount={
+                                transaction.discount
+                              }
+
+                              grandTotal={
+                                transaction.grandTotal
+                              }
+
+                              paidAmount={
+                                transaction.paidAmount
+                              }
+
+                              changeAmount={
+                                transaction.changeAmount
+                              }
+
+                              paymentMethod={
+                                transaction.paymentMethod
+                              }
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+                )
               )}
-
             </tbody>
-
           </table>
-
         </div>
-
-      )}
-
+      </div>
     </div>
   );
 }
+
+export default TransactionsPage;
