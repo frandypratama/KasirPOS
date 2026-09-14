@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/components/auth/Auth-provider';
 import Button from '@/components/ui/Button';
-import Input from '@/components/ui/Input';
+import Input from '@/components/ui/InputField';
 import { getProducts } from '@/services/product.service';
 import { createTransaction } from '@/services/transaction.service';
 import { CartItem, PaymentMethod } from '@/types/cart';

@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import Button from '@/components/ui/Button';
-import Input from '@/components/ui/Input';
+import Input from '@/components/ui/InputField';
 import type { ProductInput } from '@/types/product';
 import { FormErrors } from '@/types/error';
 import { validateProduct } from '@/lib/product-storage';

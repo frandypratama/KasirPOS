@@ -4,8 +4,8 @@ import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 
 import Button from '@/components/ui/Button';
-import EmptyState from '@/components/ui/Empty-state';
-import Input from '@/components/ui/Input';
+import EmptyState from '@/components/ui/EmptyState';
+import Input from '@/components/ui/InputField';
 import type { Product } from '@/types/product';
 import { formatCurrency } from '@/utils/currency';
 import { deleteProduct, getProducts } from '@/services/product.service';
