@@ -1,7 +1,7 @@
 //src\services\transaction.service.ts
 import db from "@/lib/firebase";
 import { PaymentMethod } from "@/types/cart";
-import { TransactionItem } from "@/types/transaction";
+import { Transaction, TransactionItem } from "@/types/transaction";
 import {
   collection,
   doc,
@@ -196,9 +196,9 @@ export const createTransaction = async (
 // GET ALL TRANSACTIONS
 // =========================================
 
-export const getTransactions = async (
+export async function getTransactions (
   uid: string
-) => {
+ ) {
 
   const q = query(
     transactionCollection(uid),

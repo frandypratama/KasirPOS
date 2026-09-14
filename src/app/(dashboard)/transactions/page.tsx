@@ -151,7 +151,7 @@ function TransactionsPage() {
         const data =
           await getTransactions(user.uid);
 
-        setTransactions(data);
+        setTransactions(data as unknown as Transaction[]);
       } catch (error) {
         console.error(
           'Gagal mengambil transaksi:',
@@ -328,7 +328,7 @@ function TransactionsPage() {
                         <td className='px-6 py-4'>
                           <span className='font-mono text-xs font-bold text-indigo-600'>
                             {
-                              transaction.invoiceNumber
+                              transaction?.invoiceNumber
                             }
                           </span>
                         </td>
